@@ -1,7 +1,3 @@
-/**
- * User: Chris Johnson
- * Date: 9/23/13
- */
 /// <reference path="../references.ts"/>
 
 var uuid = require('node-uuid')
@@ -84,7 +80,13 @@ module Ground {
     }
 
     private update_embedded_seed(property, value):Promise {
-      var other_trellis = value.trellis || property.other_trellis
+      var type_property = property.parent.type_property
+
+      var type = type_property
+        ? value[type_property.name]
+        : null
+
+      var other_trellis = value.trellis || type || property.other_trellis
       return this.ground.update_object(other_trellis, value, this.user)
         .then((entity)=> {
 //          var other_id = this.get_other_id(value);
@@ -194,9 +196,9 @@ module Ground {
               else
                 continue
             }
-              var field_string = '`' + property.get_field_name() + '`';
-              var value = this.get_field_value(property, this.seed)
-              updates.push(field_string + ' = ' + value);
+            var field_string = '`' + property.get_field_name() + '`';
+            var value = this.get_field_value(property, this.seed)
+            updates.push(field_string + ' = ' + value);
 
           }
 
@@ -309,42 +311,43 @@ module Ground {
         return this.update_reference_object(other, property)
           .then(() => {
             // Clients can use the _remove flag to detach items from lists without deleting them
-            if (typeof other === 'object' && other._remove) {
+            if (typeof other === 'object' && other._removed_) {
               if (other_id !== null) {
-                sql = join.generate_delete_row([row, other])
-                if (this.log_queries)
+                var cross = new Cross_Trellis(property)
+                cross['alias'] = null
+
+                sql = cross.generate_delete(property, row, other)
+                if (this.ground.log_updates)
                   console.log(sql)
 
-                return this.ground.invoke(join.table_name + '.delete', property, row, other, join)
+                return this.ground.invoke(join.table_name + '.remove', row, property, other, join)
                   .then(() => this.db.query(sql))
-
+                  .then(() => this.ground.invoke(join.table_name + '.removed', row, property, other, join))
               }
             }
             else {
               if (other_id === null) {
                 other = this.ground.update_object(other_trellis, other, this.user)
                   .then((other)=> {
-                    var seeds = {}
-                    seeds[this.trellis.name] = row
-                    seeds[other_trellis.name] = other
-                    sql = join.generate_insert(seeds)
-                    if (this.log_queries)
+                    var cross = new Cross_Trellis(property)
+                    sql = cross.generate_insert(property, row, other)
+                    if (this.ground.log_updates)
                       console.log(sql)
 
-                    return this.db.query(sql)
-                      .then(() => this.ground.invoke(join.table_name + '.create', property, row, other, join))
+                    return this.ground.invoke(join.table_name + '.create', row, property, other, join)
+                      .then(() => this.db.query(sql))
+                      .then(() => this.ground.invoke(join.table_name + '.created', row, property, other, join))
                   })
               }
               else {
-                var seeds = {}
-                seeds[this.trellis.name] = row
-                seeds[other_trellis.name] = other
-                sql = join.generate_insert(seeds)
-                if (this.log_queries)
+                var cross = new Cross_Trellis(property)
+                sql = cross.generate_insert(property, row, other)
+                if (this.ground.log_updates)
                   console.log(sql)
 
-                return this.db.query(sql)
-                  .then(() => this.ground.invoke(join.table_name + '.create', property, row, other, join))
+                return this.ground.invoke(join.table_name + '.create', row, property, other, join)
+                  .then(() => this.db.query(sql))
+                  .then(() => this.ground.invoke(join.table_name + '.created', row, property, other, join))
               }
             }
           })

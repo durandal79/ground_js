@@ -3,7 +3,6 @@ module.exports = function (grunt) {
   grunt.loadNpmTasks('grunt-ts')
   grunt.loadNpmTasks('grunt-contrib-concat')
   grunt.loadNpmTasks('grunt-contrib-watch')
-  grunt.loadNpmTasks('grunt-contrib-copy')
   grunt.loadNpmTasks('grunt-text-replace')
 
   grunt.initConfig({
@@ -57,18 +56,6 @@ module.exports = function (grunt) {
         ]
       }
     },
-    copy: {
-      "ground-def": {
-        files: [
-          { src: 'ground.d.ts', dest: '../../defs/'},
-          { src: 'ground.d.ts', dest: '../lawn/defs/'},
-          { src: 'ground.d.ts', dest: '../vineyard/defs/'},
-          { src: 'ground.d.ts', dest: '../fortress/defs/'},
-          { src: 'ground.d.ts', dest: '../plantlab/defs/'},
-          { src: 'ground.d.ts', dest: '../vineyard-solr/defs/'}
-        ]
-      }
-    },
     watch: {
       ground: {
         files: 'lib/**/*.ts',
@@ -77,6 +64,6 @@ module.exports = function (grunt) {
     }
   })
 
-  grunt.registerTask('default', ['ts:ground', 'concat:ground', 'concat:ground-def', 'replace:ground-def', 'copy:ground-def']);
+  grunt.registerTask('default', ['ts:ground', 'concat:ground', 'concat:ground-def', 'replace:ground-def']);
 
 }

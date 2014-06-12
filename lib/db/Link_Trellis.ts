@@ -1,7 +1,3 @@
-/**
- * User: Chris Johnson
- * Date: 10/1/13
- */
 
 /// <reference path="../references.ts"/>
 
@@ -27,6 +23,7 @@ module Ground {
     trellises:Trellis[] = []
     trellis_dictionary = {} // Should contain the same values as trellises, just keyed by trellis name
     identities:Identity[]
+    alias:string
 
     constructor(trellises:Trellis[], table_name:string = null) {
       this.trellises = trellises
@@ -36,7 +33,7 @@ module Ground {
         this.trellis_dictionary[trellis.name] = trellis
       }
 
-      this.table_name = table_name || trellises.map((t)=> t.get_plural())
+      this.table_name = table_name || trellises.map((t)=> t.get_table_name())
         .sort().join('_')
 
       this.identities = trellises.map((x)=> this.create_identity(x))
@@ -45,7 +42,6 @@ module Ground {
     create_identity(trellis:Trellis):Identity {
       var properties = [], property, name
       var keys = trellis.get_primary_keys()
-//console.log('keys', keys)
       for (var i = 0; i < keys.length; ++i) {
         property = keys[i]
         if (property.name == trellis.primary_key)
@@ -86,7 +82,7 @@ module Ground {
 //      var sql = "JOIN %table_name ON %table_name.%second_key = " + id +
 //        " AND %table_name.%first_key = %back_id\n";
 
-      return 'JOIN ' + this.table_name + ' ON ' + this.get_condition_string(seeds) + "\n"
+      return 'JOIN ' + this.get_table_declaration() + ' ON ' + this.get_condition_string(seeds) + "\n"
     }
 
     generate_delete_row(seeds:any[]):string {
@@ -135,7 +131,7 @@ module Ground {
 
     private generate_table_name() {
       var temp = MetaHub.map_to_array(this.identities,
-        (p)=>  p.parent.get_plural())
+        (p)=>  p.parent.get_table_name())
       temp = temp.sort()
       this.table_name = temp.join('_')
     }
@@ -144,7 +140,7 @@ module Ground {
       if (!seed) {
         console.log('empty key')
       }
-      if (typeof seed === 'string')
+      if (typeof seed === 'string' || typeof seed === 'number')
         return this.table_name + '.' + key.name + ' = ' + seed
 
       if (seed[key.property.name] !== undefined) {
@@ -182,6 +178,7 @@ module Ground {
     }
 
     get_conditions(seeds):string[] {
+      var table_name = typeof this.alias === 'string' ? this.alias : this.table_name
       var conditions = []
       for (var i in this.identities) {
         var identity:Identity = this.identities[i], seed = seeds[identity.trellis.name]
@@ -189,7 +186,7 @@ module Ground {
           var other_identity:Identity = this.identities[1 - i]
           for (var p in identity.keys) {
             var key = identity.keys[p], other_key = other_identity.keys[p]
-            conditions.push(this.table_name + '.' + key.name + ' = `' + identity.trellis.get_table_name() + '`.' + key.property.name)
+            conditions.push(table_name + '.' + key.name + ' = `' + identity.trellis.get_table_name() + '`.' + key.property.name)
           }
         }
         else {
@@ -208,6 +205,12 @@ module Ground {
       }
 
       return null
+    }
+
+    get_table_declaration():string {
+      return typeof this.alias === 'string'
+        ? this.table_name + ' ' + this.alias
+        : this.table_name
     }
   }
 

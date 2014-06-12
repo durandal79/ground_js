@@ -1,42 +1,37 @@
-/**
- * Created with JetBrains PhpStorm.
- * User: Chris Johnson
- * Date: 9/18/13
- */
-
 /// <reference path="../references.ts"/>
 /// <reference path="../db/Database.ts"/>
 /// <reference path="../schema/Trellis.ts"/>
-/// <reference path="../operations/Query.ts"/>
+/// <reference path="../query/Query.ts"/>
 /// <reference path="../operations/Update.ts"/>
 /// <reference path="../operations/Delete.ts"/>
 /// <reference path="../../defs/node.d.ts"/>
-//var MetaHub = require('metahub');
 
 module Ground {
 
   export interface IProperty_Source {
-    name?:string;
-    type:string;
-    insert?:string;
-    is_virtual?:boolean;
-    is_readonly?:boolean;
-    is_private?:boolean;
-    property?:string;
-    trellis?:string;
+    name?:string
+    type:string
+    insert?:string
+    is_virtual?:boolean
+    is_readonly?:boolean
+    is_private?:boolean
+    property?:string
+    trellis?:string
+    allow_null?:boolean
   }
 
   export interface ITrellis_Source {
-    plural:string;
-    parent:string;
-    name:string;
-    primary_key:string;
-    properties:IProperty_Source[];
-    is_virtual:boolean;
+    parent?:string
+    name?:string
+    primary_key?:string
+    properties?
+    is_virtual?:boolean
   }
 
   export interface ISeed {
-    _deleted?;
+    _deleted?
+    _deleted_?
+    _removed_?
   }
 
   export interface IUpdate {
@@ -44,10 +39,11 @@ module Ground {
     get_access_name():string
   }
 
-  interface ISchema_Source {
-    trellises?:any[];
-    tables?:any[];
-    views?:any[];
+  export interface ISchema_Source {
+    trellises?
+    tables?
+    views?
+    logic?
   }
 
   export function path_to_array(path) {
@@ -59,7 +55,7 @@ module Ground {
     if (!path)
       throw new Error('Empty query path.')
 
-    return path.split('/')
+    return path.split(/[\/\.]/)
   }
 
   export class Property_Type {
@@ -105,6 +101,7 @@ module Ground {
 
   export class Core extends MetaHub.Meta_Object {
     trellises:Trellis[] = []
+    custom_tables:Table[] = []
     tables:Table[] = []
     views:any[] = []
     property_types:Property_Type[] = []
@@ -170,11 +167,13 @@ module Ground {
         case 'list':
         case 'reference':
           return value;
+        case 'number': // Just for formatting values on the fly using typeof
         case 'int':
           return Math.round(value);
         case 'string':
         case 'text':
           return value;
+        case 'boolean': // Just for formatting values on the fly using typeof
         case 'bool':
           return Core.to_bool(value);
         case 'float':
@@ -187,9 +186,28 @@ module Ground {
 //      return null;
     }
 
-//    create_query(trellis:Trellis, base_path = '') {
-//      return new Query(trellis, base_path);
-//    }
+    private create_remaining_tables() {
+      for (var i in this.trellises) {
+        var trellis = this.trellises[i]
+        if (this.tables[trellis.name])
+          continue
+
+        var table = Table.create_from_trellis(trellis, this)
+        this.tables[i] = table
+      }
+    }
+
+    private create_missing_table_links() {
+      for (var i in this.trellises) {
+        var trellis = this.trellises[i]
+        var table = this.tables[trellis.name]
+        var links = trellis.get_all_links()
+        for (var p in links) {
+          if (!table.links[p])
+            table.create_link(links[p])
+        }
+      }
+    }
 
     create_query(trellis_name:string, base_path = ''):Query_Builder {
       var trellis = this.sanitize_trellis_argument(trellis_name);
@@ -203,7 +221,10 @@ module Ground {
       // If _deleted is an object then it is a list of links
       // to delete which will be handled by Update.
       // If _delete is simply true then the seed itself is marked for deletion.
-      if (seed._deleted === true || seed._deleted === 'true')
+      if (seed._deleted === true
+        || seed._deleted === 'true'
+        || seed._deleted_ === true
+        || seed._deleted_ === 'true')
         return new Delete(this, trellis, seed)
 
       var update = new Update(trellis, seed, this)
@@ -245,7 +266,8 @@ module Ground {
       // If _deleted is an object then it is a list of links
       // to delete which will be handled by Update.
       // If _delete is simply true then the seed itself is marked for deletion.
-      if (seed._deleted === true || seed._deleted === 'true')
+      if (seed._deleted === true || seed._deleted === 'true'
+        || seed._deleted_ === true || seed._deleted_ === 'true')
         return this.delete_object(trellis, seed);
 
       var update = new Update(trellis, seed, this);
@@ -283,6 +305,7 @@ module Ground {
         var table = new Table(name, this);
         table.load_from_schema(tables[name]);
         this.tables[name] = table;
+        this.custom_tables[name] = table;
       }
     }
 
@@ -309,6 +332,13 @@ module Ground {
 
       if (subset)
         this.initialize_trellises(subset, this.trellises);
+
+      if (MetaHub.is_array(data.logic) && data.logic.length > 0) {
+        Logic.load(this, data.logic)
+      }
+
+      this.create_remaining_tables()
+      this.create_missing_table_links()
     }
 
     static remove_fields(object, trellis:Trellis, filter) {
@@ -337,6 +367,7 @@ module Ground {
     stop() {
       console.log('Closing database connections.')
       this.db.close()
+      console.log('Finished closing database.')
     }
 
     static to_bool(input) {
@@ -345,6 +376,12 @@ module Ground {
       }
 
       return !!input;
+    }
+
+    export_schema():ISchema_Source {
+      return {
+        trellises: MetaHub.map(this.trellises, (trellis) => trellis.export_schema())
+      }
     }
   }
 }

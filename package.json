@@ -1,27 +1,22 @@
 {
-  "name": "ground_js",
-  "version": "0.1.0",
-  "description": "Ground Libraries for Node.js",
+  "name": "vineyard-ground",
+  "version": "0.1.35",
+  "description": "MySQL ORM for Vineyard / Node.js",
   "main": "ground.js",
-  "dependencies": {
-    "mysql": "2.x.x",
-    "express": "3.x.x",
-    "node-uuid": "~1.x.x"
-  },
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
   "repository": {
     "type": "git",
     "url": "git@github.com:silentorb/ground_js.git"
   },
   "author": "Christopher W. Johnson",
   "license": "MIT",
+  "dependencies": {
+    "mysql": "2.x.x",
+    "node-uuid": "~1.x.x"
+  },
   "devDependencies": {
     "grunt": "~0.4.x",
     "grunt-ts": "~1.x.x",
     "grunt-contrib-watch": "~0.6.1",
-    "grunt-contrib-copy": "~0.5.0",
     "grunt-text-replace": "~0.3.11",
     "grunt-contrib-concat": "~0.4.0"
   }

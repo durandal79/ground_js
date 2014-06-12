@@ -1,9 +1,6 @@
-/**
- * Created with JetBrains PhpStorm.
- * User: Chris Johnson
- * Date: 9/18/13
- */
 /// <reference path="../references.ts"/>
+
+// !!! THE Query CLASS IS DEPRECATED.  It was broken into multiple smaller classes. !!!
 
 module Ground {
 
@@ -14,13 +11,6 @@ module Ground {
 
   export interface IService_Response {
     objects:any[]
-  }
-
-  export interface Query_Filter_Source {
-    property?:string
-    path?:string
-    value
-    operator?:string
   }
 
   export interface Query_Wrapper {
@@ -41,13 +31,8 @@ module Ground {
   export interface External_Query_Source extends Property_Query_Source {
     trellis:string;
     map?
-  }
-
-  export interface Internal_Query_Source {
-    fields?
-    filters?:any[]
-    joins?:string[]
-    arguments?
+    type?:string
+    queries?:External_Query_Source[]
   }
 
   export class Query {
@@ -454,10 +439,10 @@ module Ground {
       var value = filter.value;
 
       var placeholder = ':' + property.name + '_filter';
-      if (value === 'null' && property.type != 'string') {
-        result.filters.push(property.query() + ' IS NULL');
-        return result;
-      }
+//      if (value === 'null' && property.type != 'string') {
+//        result.filters.push(property.query() + ' IS NULL');
+//        return result;
+//      }
 
       if (value !== null)
         value = this.ground.convert_value(value, property.type);
@@ -665,7 +650,7 @@ module Ground {
       var cross_property:Property = null, first_trellis
 
       var trellis:Trellis = first_trellis = ground.sanitize_trellis_argument(parts[0])
-      sql += 'FROM `' + trellis.get_plural() + '`\n'
+      sql += 'FROM `' + trellis.get_table_name() + '`\n'
 
       for (var i = 1; i < parts.length; ++i) {
         var properties = trellis.get_all_properties()

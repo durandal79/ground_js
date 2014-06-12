@@ -57,7 +57,7 @@ module Ground {
         var link = links[i]
         var other = link.get_other_property()
         // The other trellis may not have a reciprocal property
-        if (other && other.name == 'parent' || other.is_parent)
+        if (other && (other.name == 'parent' || other.is_parent))
           result.push(link)
       }
 
@@ -73,19 +73,24 @@ module Ground {
     private run_delete(trellis:Trellis, seed:ISeed, depth:number = 0):Promise {
       if (depth > this.max_depth)
         throw new Error("Max depth of " + this.max_depth + " exceeded.  Possible infinite loop.")
-
+      console.log('deleting')
       var id = seed[trellis.primary_key]
       if (id === null || id === undefined)
         throw new Error("Object was tagged to be deleted but has no identity.")
 
       id = trellis.properties[trellis.primary_key].get_sql_value(id)
+      var property_names = MetaHub.map_to_array(trellis.get_all_properties(), (x)=> x.name)
 
-      var tree = trellis.get_tree().filter((t:Trellis)=> !t.is_virtual)
-      var invoke_promises = tree.map((trellis:Trellis) => this.ground.invoke(trellis.name + '.delete', seed))
+      return trellis.assure_properties(seed,property_names)
+        .then((seed)=> {
+          var tree = trellis.get_tree().filter((t:Trellis)=> !t.is_virtual)
+          var invoke_promises = tree.map((trellis:Trellis) => this.ground.invoke(trellis.name + '.delete', seed))
 
-      return when.all(invoke_promises)
-        .then(()=> tree.map((trellis:Trellis) => this.delete_record(trellis, id)))
-        .then(()=> this.delete_children(trellis, id, depth))
+          return when.all(invoke_promises)
+            .then(()=> when.all(tree.map((trellis:Trellis) => this.delete_record(trellis, id))))
+            .then(()=> when.all(tree.map((trellis:Trellis) => this.ground.invoke(trellis.name + '.deleted', seed))))
+            .then(()=> this.delete_children(trellis, id, depth))
+        })
     }
   }
 }

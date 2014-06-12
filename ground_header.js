@@ -1,1 +1,1 @@
-var MetaHub = require('metahub');
+var MetaHub = require('vineyard-metahub');

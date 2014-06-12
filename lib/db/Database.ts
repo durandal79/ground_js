@@ -1,7 +1,9 @@
 /// <reference path="../references.ts"/>
 /// <reference path="../../defs/mysql.d.ts"/>
-//var when = require('when');
-/// <reference path="../../../metahub/metahub.d.ts"/>
+/// <reference path="../../../vineyard-metahub/metahub.d.ts"/>
+
+var when = require('when')
+var mysql = require('mysql')
 
 module Ground {
   export class Database {
@@ -9,13 +11,14 @@ module Ground {
     database:string
     log_queries:boolean = false
     pool
+    active:boolean = true
 
     constructor(settings:{
     }, database:string) {
-      this.settings = settings;
-      this.database = database;
+      this.settings = settings
+      this.database = database
       var mysql = require('mysql')
-      this.pool  = mysql.createPool(this.settings[this.database]);
+      this.pool = mysql.createPool(this.settings[this.database])
     }
 
     add_table_to_database(table:Table, ground:Core):Promise {
@@ -37,8 +40,21 @@ module Ground {
 //        .then(()=>table)
 //    }
 
+    start() {
+      if (this.active)
+        return
+
+      this.pool = mysql.createPool(this.settings[this.database])
+      this.active = true
+      console.log('db-started.')
+    }
+
     close() {
-      this.pool.end()
+      if (this.pool) {
+        this.pool.end()
+        this.pool = null
+      }
+      this.active = false
     }
 
     create_table(trellis:Trellis):Promise {

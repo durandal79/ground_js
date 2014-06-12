@@ -1,9 +1,3 @@
-/**
- * Created with JetBrains PhpStorm.
- * User: Chris Johnson
- * Date: 9/18/13
- */
-
 /// <reference path="../references.ts"/>
 
 module Ground {
@@ -13,19 +7,24 @@ module Ground {
   }
 
   export class Trellis implements ITrellis {
-    plural:string = null;
-    parent:Trellis = null;
-    ground:Core;
-    table:Table = null;
-    name:string = null;
-    primary_key:string = 'id';
-    // Property that are specific to this trellis and not inherited from a parent trellis
-    properties:{ [name: string]: Property
-    } = {};
+    parent:Trellis = null
+    ground:Core
+    table:Table = null
+    name:string = null
+    primary_key:string = 'id'
+    is_virtual:boolean = false
+
+    // Property objects that are specific to this trellis and not inherited from a parent trellis
+    properties:{
+      [name: string]: Property
+    } = {}
+
     // Every property including inherited properties
-    all_properties:{ [name: string]: Property;
-    } = {};
-    is_virtual:boolean = false;
+    all_properties = {}
+
+    // If a trellis has one or more properties configured to insert the trellis name, the first of
+    // those are stored here
+    type_property:Property
 
     constructor(name:string, ground:Core) {
       this.ground = ground;
@@ -33,9 +32,12 @@ module Ground {
     }
 
     add_property(name:string, source):Property {
-      var property = new Property(name, source, this);
-      this.properties[name] = property;
-      this.all_properties[name] = property;
+      var property = new Property(name, source, this)
+      this.properties[name] = property
+      this.all_properties[name] = property
+      if (property.insert == 'trellis' && !this.type_property)
+        this.type_property = property
+
       return property;
     }
 
@@ -78,6 +80,15 @@ module Ground {
       return result;
     }
 
+    get_property(name:string):Property {
+      var properties = this.get_all_properties()
+      var property = properties[name]
+      if (!property)
+        throw new Error('Trellis ' + this.name + ' does not contain a property named ' + name + '.')
+
+      return property
+    }
+
     get_core_properties() {
       var result = {}
       for (var i in this.properties) {
@@ -87,9 +98,6 @@ module Ground {
       }
 
       return result;
-//      return Enumerable.From(this.properties).Where(
-//        (p) => p.type != 'list'
-//      );
     }
 
     get_id(source) {
@@ -115,6 +123,12 @@ module Ground {
       return result;
     }
 
+    get_identity2(value) {
+      if (typeof value == 'object')
+        return value[this.primary_key]
+
+      return value
+    }
 
     get_ancestor_join(other:Trellis):string {
 //      if (!this.parent)
@@ -139,10 +153,6 @@ module Ground {
       return result;
     }
 
-    get_plural():string {
-      return this.plural || this.name + 's';
-    }
-
     get_primary_keys() {
       if (this.table && this.table.primary_keys) {
         var result = []
@@ -154,6 +164,10 @@ module Ground {
       }
 
       return [ this.properties[this.primary_key] ]
+    }
+
+    get_primary_property():Property {
+      return this.properties[this.primary_key]
     }
 
     get_reference_property(other_trellis:Trellis):Property {
@@ -175,14 +189,13 @@ module Ground {
     }
 
     get_table_name():string {
-//      console.log('get_table_name', this.name, this.is_virtual, this.plural, this.table)
       if (this.is_virtual) {
         if (this.parent) {
           return this.parent.get_table_name();
         }
-        else {
-          throw new Error('Cannot query trellis ' + this.name + ' since it is virtual and has no parent');
-        }
+//        else {
+//          throw new Error('Cannot query trellis ' + this.name + ' since it is virtual and has no parent');
+//        }
       }
       if (this.table) {
         if (this.table.db_name)
@@ -190,8 +203,6 @@ module Ground {
         else
           return this.table.name;
       }
-      if (this.plural)
-        return this.plural;
 
       return this.name + 's';
     }
@@ -248,8 +259,12 @@ module Ground {
       }
     }
 
+    query():string {
+      return this.get_table_query() + '.' + this.properties[this.primary_key].get_field_name()
+    }
+
     query_primary_key():string {
-      return this.get_table_query() + '.' + this.properties[this.primary_key].get_field_name();
+      return this.query()
     }
 
     sanitize_property(property) {
@@ -288,6 +303,44 @@ module Ground {
         parent.clone_property(keys[i], this);
       }
       this.primary_key = parent.primary_key;
+    }
+
+    private seed_has_properties(seed, properties:string[]):boolean {
+      for (var i in properties) {
+        var name = properties[i]
+        if (seed[name] === undefined)
+          return false
+      }
+
+      return true
+    }
+
+    assure_properties(seed, required_properties:string[]):Promise {
+      if (this.seed_has_properties(seed, required_properties)) {
+        return when.resolve(seed)
+      }
+
+      var query = this.ground.create_query(this.name)
+      query.add_key_filter(this.get_identity2(seed))
+      query.extend({
+        properties: required_properties
+      })
+      return query.run_single()
+    }
+
+    export_schema():ITrellis_Source {
+      var result:ITrellis_Source = {}
+      if (this.parent)
+        result.parent = this.parent.name
+      else if (this.primary_key != 'id')
+        result.primary_key = this.primary_key
+
+      if (this.is_virtual)
+        result.is_virtual = true
+
+      result.properties = MetaHub.map(this.properties, (property) => property.export_schema())
+
+      return result
     }
   }
 }

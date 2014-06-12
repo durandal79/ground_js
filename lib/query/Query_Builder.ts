@@ -7,14 +7,42 @@ module Ground {
     offset?
   }
 
-  export interface Query_Filter {
-    property:Property
+  export interface Query_Filter_Source {
+    property?:string
+    path?:string
     value
-    operator:string
+    operator?:string
+
+  }
+
+  export interface Query_Filter {
+    path?:string
+    property?:Property
+    value
+    operator?:string
+  }
+
+  export interface Condition_Source {
+    path?:string
+    value?
+    operator?:string
+
+    type?:string
+    expressions?:Condition_Source[]
+  }
+
+  export interface Condition {
+    path?:Property[]
+    value?
+    operator?:string
+
+    type?:string
+    expressions?:Condition[]
   }
 
   export interface Query_Sort {
-    property
+    property?
+    path?
     dir?
   }
 
@@ -33,22 +61,29 @@ module Ground {
     pager:IPager
     type:string = 'query'
     properties
+    condition:Condition
     sorts:Query_Sort[] = []
     source:External_Query_Source
     include_links:boolean = false
     transforms:Query_Transform[] = []
     subqueries = {}
     map = {}
+    queries:Query_Builder[] = undefined // used for Unions
     public static operators = {
       '=': null,
       'LIKE': {
         "render": (result, filter, property, data)=> {
-          result.filters.push(property.query() + ' LIKE ' + data.placeholder)
           if (data.value !== null)
-            data.value = '%' + data.value + '%'
+            data.value = "'%" + data.value + "%'"
         }
       },
-      '!=': null
+      '!=': null,
+      '<': null,
+      '>': null,
+      '<=': null,
+      '>=': null,
+      '=>': null,
+      '=<': null
     }
 
     filters:Query_Filter[] = []
@@ -62,23 +97,53 @@ module Ground {
       Query_Builder.operators[symbol] = action
     }
 
-    add_filter(property_name:string, value = null, operator:string = '=') {
-      var properties = this.trellis.get_all_properties()
-      var property = properties[property_name]
-      if (!property)
-        throw new Error('Trellis ' + this.trellis.name + ' does not contain a property named ' + property_name + '.')
-      console.log('q', Query_Builder.operators)
+    add_filter(path:string, value = null, operator:string = '=') {
+
+//      if (!property)
+//        throw new Error('Trellis ' + this.trellis.name + ' does not contain a property named ' + property_name + '.')
+//      console.log('q', Query_Builder.operators)
       if (Query_Builder.operators[operator] === undefined)
         throw new Error("Invalid operator: '" + operator + "'.")
 
-      if (value === null || value === undefined)
-        throw new Error('Cannot add property filter where value is null; property = ' + this.trellis.name + '.' + property_name + '.')
+      if (value === undefined)
+        throw new Error('Cannot add property filter where value is undefined; property = ' + this.trellis.name + '.' + path + '.')
 
-      this.filters.push({
-        property: property,
+      var filter = <Query_Filter>{
+        path: path,
         value: value,
         operator: operator
-      })
+      }
+
+      if (path.indexOf('.') === -1) {
+        var properties = this.trellis.get_all_properties()
+        filter.property = properties[path]
+      }
+
+      this.filters.push(filter)
+    }
+
+    create_condition(source:Condition_Source):Condition {
+      if (source.type == "or" || source.type == "and") {
+        return {
+          type: source.type,
+          expressions: source.expressions.map((x) => this.create_condition(source))
+        }
+      }
+      else {
+        if (Query_Builder.operators[source.operator] === undefined)
+          throw new Error("Invalid operator: '" + source.operator + "'.")
+
+        if (source.value === undefined) {
+          throw new Error('Cannot add property filter where value is undefined; property = '
+            + this.trellis.name + '.' + source.path + '.')
+        }
+
+        return {
+          path: Query_Renderer.get_chain(source.path, this.trellis),
+          value: source.value,
+          operator: source.operator
+        }
+      }
     }
 
     add_key_filter(value) {
@@ -86,18 +151,21 @@ module Ground {
     }
 
     add_sort(sort:Query_Sort) {
-      for (var i = 0; i < this.sorts.length; ++i) {
-        if (this.sorts[i].property == sort.property) {
-          this.sorts.splice(i, 1)
-          break
-        }
-      }
-
       this.sorts.push(sort)
     }
 
     add_map(target:string, source = null) {
       this.map[target] = source
+    }
+
+    add_query(source):Query_Builder {
+      var trellis = this.ground.sanitize_trellis_argument(source.trellis)
+      var query = new Query_Builder(trellis)
+      this.queries = this.queries || []
+      this.queries.push(query)
+      query.extend(source)
+
+      return query
     }
 
     add_subquery(property_name:string, source = null):Query_Builder {
@@ -136,16 +204,21 @@ module Ground {
       if (value === undefined || value === null)
         throw new Error(property.fullname() + ' could not get a valid identity from the provided seed.')
 
+      var other_property = property.get_other_property(true)
       return {
-        property: property.get_other_property(true),
+        path: other_property.name,
+        property: other_property,
         value: value,
         operator: '='
       }
     }
 
-    extend(source:External_Query_Source) {
+    extend(source) {
       if (!source) // I think it's okay to allow null to be passed to this method
         return
+
+      if (typeof source.type === 'string')
+        this.type = source.type
 
       var i
       this.source = source
@@ -155,6 +228,10 @@ module Ground {
           var filter = source.filters[i]
           this.add_filter(filter.path || filter.property, filter.value, filter.operator)
         }
+      }
+
+      if (source.condition) {
+        this.condition = this.create_condition(source.condition)
       }
 
       if (source.sorts) {
@@ -167,37 +244,44 @@ module Ground {
         this.pager = source.pager
       }
 
-      if (source.properties) {
-        var properties = this.trellis.get_all_properties()
-        this.properties = {}
-        for (var i in source.properties) {
-          var property = source.properties[i]
-          if (typeof property == 'string') {
-            if (!properties[property])
-              throw new Error('Error with overriding query properties: ' + this.trellis.name + ' does not have a property named ' + property + '.')
+      if (source.type === 'union') {
+        for (i = 0; i < source.queries.length; ++i) {
+          this.add_query(source.queries[i])
+        }
+      }
+      else {
+        if (source.properties) {
+          var properties = this.trellis.get_all_properties()
+          this.properties = {}
+          for (var i in source.properties) {
+            var property = source.properties[i]
+            if (typeof property == 'string') {
+              if (!properties[property])
+                throw new Error('Error with overriding query properties: ' + this.trellis.name + ' does not have a property named ' + property + '.')
 
-            this.properties[property] = {
+              this.properties[property] = {
+              }
+            }
+            else {
+              var name = property.name || i
+              if (!properties[name])
+                throw new Error('Error with overriding query properties: ' + this.trellis.name + ' does not have a property named ' + name + '.')
+
+              if (property)
+                this.properties[name] = property
             }
           }
-          else {
-            var name = property.name || i
-            if (!properties[name])
-              throw new Error('Error with overriding query properties: ' + this.trellis.name + ' does not have a property named ' + name + '.')
 
-            if (property)
-              this.properties[name] = property
+          var identities = [ this.trellis.properties[this.trellis.primary_key] ]
+          if (identities[0].composite_properties && identities[0].composite_properties.length > 0) {
+            identities = identities.concat(identities[0].composite_properties)
           }
-        }
 
-        var identities = [ this.trellis.properties[this.trellis.primary_key] ]
-        if (identities[0].composite_properties && identities[0].composite_properties.length > 0) {
-          identities = identities.concat(identities[0].composite_properties)
-        }
-
-        for (var k in identities) {
-          var identity = identities[k]
-          if (!this.properties[identity.name])
-            this.properties[identity.name] = {}
+          for (var k in identities) {
+            var identity = identities[k]
+            if (!this.properties[identity.name])
+              this.properties[identity.name] = {}
+          }
         }
       }
 
@@ -218,7 +302,6 @@ module Ground {
           var expansion = source.expansions[i]
           var tokens = expansion.split('/')
           var subquery = this
-          console.log('expansion', tokens)
           for (var j = 0; j < tokens.length; ++j) {
             subquery = subquery.add_subquery(tokens[j], {})
           }
@@ -227,7 +310,7 @@ module Ground {
     }
 
     get_primary_key_value() {
-      var filters = this.filters.filter((filter)=>filter.property.name == this.trellis.primary_key)
+      var filters = this.filters.filter((filter)=>filter.path == this.trellis.primary_key)
       if (filters.length > 0)
         return filters[0].value
 
@@ -236,13 +319,13 @@ module Ground {
 
     run():Promise {
       var runner = new Query_Runner(this)
-      console.log('filters', this.filters)
+//      console.log('filters', this.filters)
       return runner.run()
     }
 
     run_single():Promise {
       return this.run()
-        .then((rows)=> rows[0])
+        .then((result)=> result.objects[0])
     }
   }
 }

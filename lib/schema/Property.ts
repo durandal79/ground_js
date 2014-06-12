@@ -1,9 +1,3 @@
-/**
- * Created with JetBrains PhpStorm.
- * User: Chris Johnson
- * Date: 9/18/13
- * Time: 5:40 PM
- */
 /// <reference path="../references.ts"/>
 
 module Ground {
@@ -21,7 +15,7 @@ module Ground {
     type:string = null
     insert:string = null
     other_property:string = null
-    "default":any
+  "default"
     other_trellis:Trellis = null
     other_trellis_name:string = null
     is_private:boolean = false
@@ -39,10 +33,10 @@ module Ground {
         if (this.hasOwnProperty(i))
           this[i] = source[i];
       }
-      if (source['default'] !== undefined )
+      if (source['default'] !== undefined)
         this.default = source['default']
 
-      if (source['allow_null'] !== undefined )
+      if (source['allow_null'] !== undefined)
         this.allow_null = source['allow_null']
 
       if (source.trellis) {
@@ -90,7 +84,7 @@ module Ground {
 
     get_composite() {
       if (this.composite_properties)
-      return [ this ].concat(this.composite_properties)
+        return [ this ].concat(this.composite_properties)
 
       return [ this ]
     }
@@ -210,6 +204,10 @@ module Ground {
       if (property_type && property_type.parent)
         return this.get_sql_value(value, property_type.parent.name, is_reference);
 
+      if (this.parent.primary_key == this.name) {
+        value = this.parent.get_identity2(value)
+      }
+
       switch (type) {
         case 'guid':
           if (!value)
@@ -316,11 +314,22 @@ module Ground {
     get_other_property(create_if_none:boolean = false):Property {
       var property;
       if (this.other_property) {
-        return this.other_trellis.properties[this.other_property];
+        var properties = this.other_trellis.get_all_properties()
+        var other_property = properties[this.other_property]
+        if (!other_property) {
+          throw new Error('Invalid other property in ' + this.get_field_name() + ": "
+            + this.other_trellis.name + '.' + this.other_property + ' does not exist.')
+
+        }
+        return other_property
       }
       else {
-        if (!this.other_trellis)
+        if (!this.other_trellis) {
+          if (create_if_none)
+            throw new Error("Attempt to get other property for " + this.get_field_name() + " but its other_trellis is null.");
+
           return null
+        }
 
         for (var name in this.other_trellis.properties) {
           property = this.other_trellis.properties[name];
@@ -330,8 +339,12 @@ module Ground {
         }
       }
 
-      if (this.other_trellis === this.parent)
+      if (this.other_trellis === this.parent) {
+        if (create_if_none)
+          return this
+
         return null
+      }
 
       if (!create_if_none)
         return null
@@ -343,7 +356,9 @@ module Ground {
       attributes.type = 'list'
       attributes.is_virtual = true
       attributes.trellis = this.parent.name
-      return new Property(this.other_trellis.name, attributes, this.other_trellis)
+      var result = new Property(this.other_trellis.name, attributes, this.other_trellis)
+      result.other_trellis = this.parent
+      return result
     }
 
     get_property_type():Property_Type {
@@ -405,6 +420,31 @@ module Ground {
 
     query():string {
       return '`' + this.parent.get_table_name() + '`.' + this.get_field_name()
+    }
+
+    export_schema():IProperty_Source {
+      var result:IProperty_Source = {
+        type: this.type
+      }
+      if (this.other_trellis)
+        result.trellis = this.other_trellis.name
+
+      if (this.is_virtual)
+        result.is_virtual = true
+
+      if (this.insert)
+        result.insert = this.insert
+
+      if (this.is_readonly)
+        result.is_readonly = true
+
+      if (this.default !== undefined)
+        result['default'] = this.default
+
+      if (this.allow_null)
+        result.allow_null = true
+
+      return result
     }
 
 //    get_referenced_trellis():Trellis {

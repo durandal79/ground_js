@@ -6,6 +6,29 @@ module Ground {
     name:string
     share?:string
     other_table?:string
+    other_field?:string
+  }
+
+  export enum Link_Field_Type {
+    identity,
+    reference
+  }
+
+  export class Link_Field {
+    name:string
+    parent:Table
+    other_table:Table
+    type:Link_Field_Type
+    other_link:Link_Field
+    field:IField
+    property:Property
+
+    constructor(name:string, parent:Table, other_table:Table, type:Link_Field_Type) {
+      this.name = name
+      this.parent = parent
+      this.other_table = other_table
+      this.type = type
+    }
   }
 
   export class Table {
@@ -17,6 +40,7 @@ module Ground {
     trellis:Trellis
     primary_keys:any[]
     query:string
+    links = {}
 
     constructor(name:string, ground:Core) {
       this.name = name;
@@ -39,16 +63,90 @@ module Ground {
       return table;
     }
 
+    static get_other_table(property:Property):Table {
+      var ground = property.parent.ground
+      var name = Table.get_other_table_name(property)
+      return ground.tables[name]
+    }
+
+    static get_other_table_name(property:Property):string {
+      var field = property.get_field_override()
+      if (field && field.other_table)
+        return field.other_table
+
+      if (property.get_relationship() === Relationships.many_to_many)
+        return Cross_Trellis.generate_name(property.parent, property.other_trellis)
+
+      return property.other_trellis.name
+    }
+
+    create_link(property:Property) {
+
+      var other_table = Table.get_other_table(property)
+      if (!other_table)
+        throw new Error('Could not find other table for ' + property.fullname())
+
+      var type = property.type == 'reference'
+        ? Link_Field_Type.reference
+        : Link_Field_Type.identity
+
+      var link = new Link_Field(
+        property.name,
+        this,
+        other_table,
+        type
+      )
+
+      link.property = property
+
+      if (this.properties[link.name])
+        link.field = this.properties[link.name]
+
+      var other_link
+      if (!other_table.trellis) {
+        // other_table must be a cross-table
+        var other_field_name = link.field && link.field.other_field
+          ? link.field.other_field
+          : property.parent.name // By default cross-table links are the name of the trellis they point to
+
+        other_link = new Link_Field(
+          property.name,
+          other_table,
+          this,
+          Link_Field_Type.reference // Cross-table links are always references
+        )
+
+        other_table.links[other_link.name]= other_link
+      }
+      else {
+        var other_field_name = link.field && link.field.other_field
+          ? link.field.other_field
+          : property.get_other_property(true).name
+
+        // I'm assuming that if the other link is currently null,
+        // it will be initialized later and at that time
+        // the cross references will be assigned.
+        other_link = other_table.links[other_field_name] || null
+      }
+
+      if (other_link) {
+        link.other_link = other_link
+        other_link.other_link = link
+      }
+
+      this.links[link.name] = link
+    }
+
     create_sql(ground:Core) {
       var fields = [];
       for (var name in this.properties) {
-        var property = this.properties[name];
+        var property = this.properties[name]
 
         var field = {
           name: property.name || name,
           type: ground.get_base_property_type(property.type).field_type,
           default: undefined
-        };
+        }
 
         if (property.default !== undefined)
           field.default = property.default;
@@ -71,8 +169,8 @@ module Ground {
 
         var auto_increment =
           primary_keys.indexOf(name) > -1
-          && type.search(/INT/) > -1
-          && primary_keys[0] == name
+            && type.search(/INT/) > -1
+            && primary_keys[0] == name
 
         var field_sql = '`' + name + '` ' + type;
         if (auto_increment)
@@ -235,7 +333,7 @@ module Ground {
         this.trellis = this.ground.trellises[name];
         this.trellis.table = this;
         if (!source.name)
-          this.name = this.trellis.get_plural();
+          this.name = this.trellis.name + 's';
       }
     }
   }
